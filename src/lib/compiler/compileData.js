@@ -204,8 +204,95 @@ const compile = async (
     ascii.push(textNumLines(string));
     for (let i = 0; i < string.length; i++) {
       const char = string.charCodeAt(i);
-      if (char < 256) {
+      if(char <  0x5f){
         ascii.push(string.charCodeAt(i));
+      }
+      else if( char >= 0x61 && char <= 0x7D ){
+        ascii.push(string.charCodeAt(i) - 0x20);
+      }
+      // hiragana
+      else if( char >= 0x3041 && char <= 0x3096 ){
+        ascii.push(string.charCodeAt(i) - 0x2FE1);
+      }
+      // katakana
+      else if( char >= 0x30a1 && char <= 0x30f6 ){
+        ascii.push(string.charCodeAt(i) - 0x2FEE);
+      }
+      // zenkaku space
+      else if( char == 0x3000){
+        ascii.push(0x20);
+      }
+      //？
+      else if( char == 0xFF1F ){
+        ascii.push(0x3F);
+      }
+      //！
+      else if( char == 0xFF01 ){
+        ascii.push(0x21);
+      }
+      // 、。
+      else if( char >= 0x3001 && char <= 0x3002 ){
+        ascii.push(string.charCodeAt(i) - 0x2EF6);
+      }
+      //～
+      else if( char == 0x7E || char == 0x301C || char == 0xFF5E){
+        ascii.push(0x10D);
+      }
+      //・
+      else if( char == 0x30FB){
+        ascii.push(string.charCodeAt(i) - 0x2FF0);
+      }
+      //…
+      else if( char == 0x2026){
+        ascii.push(string.charCodeAt(i) - 0x1F39);
+      }
+      //♪
+      else if( char == 0x266A){
+        ascii.push(string.charCodeAt(i) - 0x255A);
+      }
+      //ー
+      else if( char == 0x30FC){
+        ascii.push(string.charCodeAt(i) - 0x30CF);
+      }
+      // 「」『』【】
+      else if( char >= 0x300C && char <= 0x3011 ){
+        ascii.push(string.charCodeAt(i) - 0x2EFB);
+      }
+      // ★
+      else if( char == 0x2605){
+        ascii.push(string.charCodeAt(i) - 0x24EE);
+      }
+      // 〇
+      else if( char == 0x25CB){
+        ascii.push(string.charCodeAt(i) - 0x25B3);
+      }
+      // 〇
+      else if( char == 0x3007){
+        ascii.push(string.charCodeAt(i) - 0x2EEF);
+      }
+      // ●
+      else if( char == 0x25CF){
+        ascii.push(string.charCodeAt(i) - 0x25B6);
+      }
+      // ◆
+      else if( char == 0x25C6){
+        ascii.push(string.charCodeAt(i) - 0x24AC);
+      }
+      // ■□
+      else if( char >= 0x25A0 && char <= 0x25A1 ){
+        ascii.push(string.charCodeAt(i) - 0x2485);
+      }
+      // ▲
+      else if( char == 0x25B2 ){
+        ascii.push(0x11D);
+      }
+      // ￥
+      else if( char == 0xFFE5 ){
+        ascii.push(0x11E);
+      }
+      // チェック 0x2713
+      else if( char == 0x2713){
+        ascii.push(0x11F);
       }
     }
     ascii.push(0);
@@ -650,7 +737,7 @@ export const precompileUIImages = async (
   tmpPath,
   { warnings }
 ) => {
-  const fontPath = await ensureProjectAsset("assets/ui/ascii.png", {
+  const fontPath = await ensureProjectAsset("assets/ui/ascii.ja.png", {
     projectRoot,
     warnings
   });

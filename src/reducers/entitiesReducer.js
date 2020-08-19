@@ -5,6 +5,7 @@ import deepmerge from "deepmerge";
 import { mapValues } from "lodash";
 import {
   PROJECT_LOAD_SUCCESS,
+  PROJECT_SAVE_AS_SUCCESS,
   SPRITE_LOAD_SUCCESS,
   BACKGROUND_LOAD_SUCCESS,
   SPRITE_REMOVE,
@@ -50,7 +51,7 @@ import {
 } from "../lib/helpers/eventSystem";
 import initialState from "./initialState";
 import { EVENT_CALL_CUSTOM_EVENT } from "../lib/compiler/eventTypes";
-import { replaceInvalidCustomEventVariables } from "../lib/compiler/helpers";
+import { replaceInvalidCustomEventVariables, replaceInvalidCustomEventActors } from "../lib/compiler/helpers";
 
 const addEntity = (state, type, data) => {
   return {
@@ -173,6 +174,11 @@ export const denormalizeProject = projectData => {
 const loadProject = (state, action) => {
   const data = normalizeProject(action.data);
   return deepmerge(state, data);
+};
+
+const saveAsProject = (state, action) => {
+  const data = normalizeProject(action.data);
+  return deepmerge({}, data);
 };
 
 const editProject = (state, action) => {
@@ -534,6 +540,7 @@ const editCustomEvent = (state, action) => {
   if (patch.script) {
     // Fix invalid variables in script
     const fix = replaceInvalidCustomEventVariables;
+    const fixActor = replaceInvalidCustomEventActors;
     patch.script = mapEvents(patch.script, event => {
       return {
         ...event,
@@ -541,7 +548,8 @@ const editCustomEvent = (state, action) => {
           ...event.args,
           variable: event.args.variable && fix(event.args.variable),
           vectorX: event.args.vectorX && fix(event.args.vectorX),
-          vectorY: event.args.vectorY && fix(event.args.vectorY)
+          vectorY: event.args.vectorY && fix(event.args.vectorY),
+          actorId: event.args.actorId && fixActor(event.args.actorId)
         }
       };
     });
@@ -714,36 +722,37 @@ const updateEntitiesCustomEventScript = (state, type, id, entities, patch) => {
   let newState = state;
   const usedVariables = Object.keys(variables).map((i) => `$variable[${i}]$`);
   const usedActors = Object.keys(actors).map((i) => `$actor[${i}]$`);
+  const patchCustomEventScript = event => {
+    if (event.command !== EVENT_CALL_CUSTOM_EVENT) {
+      return event;
+    }
+    if (event.args.customEventId !== id) {
+      return event;
+    }
+    const newArgs = Object.assign({ ...event.args });
+    Object.keys(newArgs).forEach((k) => {
+      if (k.startsWith("$") &&
+        !usedVariables.find((v) => v === k) &&
+        !usedActors.find((a) => a === k)) {
+        delete newArgs[k];
+      }
+    });
+    return {
+      ...event,
+      args: newArgs,
+      children: {
+        script: [...script]
+      }
+    };
+  };
   Object.values(entities).forEach(entity => {
-    if (!entity || !entity.script) {
+    if (!entity || (!entity.script && !entity.startScript)) {
       return;
     }
     const patchEntity = {
       ...entity,
-      script: mapEvents(entity.script, event => {
-        if (event.command !== EVENT_CALL_CUSTOM_EVENT) {
-          return event;
-        }
-        if (event.args.customEventId !== id) {
-          return event;
-        }
-        const newArgs = Object.assign({ ...event.args });
-        Object.keys(newArgs).forEach((k) => {
-          if (k.startsWith("$") && 
-            !usedVariables.find((v) => v === k) && 
-            !usedActors.find((a) => a === k)
-            ) {
-            delete newArgs[k];
-          }
-        });
-        return {
-          ...event,
-          args: newArgs,
-          children: {
-            script: [...script]
-          }
-        };
-      })
+      ...entity.script && { script: mapEvents(entity.script, patchCustomEventScript) },
+      ...entity.startScript && { startScript: mapEvents(entity.startScript, patchCustomEventScript) }   
     };
     newState = editEntity(newState, type, entity.id, patchEntity);
   });
@@ -1263,6 +1272,8 @@ export default function project(state = initialState.entities, action) {
   switch (action.type) {
     case PROJECT_LOAD_SUCCESS:
       return loadProject(state, action);
+    case PROJECT_SAVE_AS_SUCCESS:
+      return saveAsProject(state, action);
     case EDIT_PROJECT:
       return editProject(state, action);
     case EDIT_PROJECT_SETTINGS:

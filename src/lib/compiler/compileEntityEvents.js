@@ -56,6 +56,21 @@ const compileEntityEvents = (input = [], options = {}) => {
       continue;
     }
     if (events[command]) {
+      if (command === "EVENT_PLAYER_SET_SPRITE") {
+        if (input[i].args && input[i].args.spriteSheetId) {
+          const sprite = options.sprites.find(
+            (s) => s.id === input[i].args.spriteSheetId
+          );
+          if (sprite && sprite.numFrames > 6) {
+            warnings(
+              `Used "Set Player Sprite Sheet" event with a sprite sheet containing more than 6 frames. This may cause graphics corruption. ${JSON.stringify({
+                ...location,
+                filename: sprite.filename
+              })}`
+            );
+          }
+        }
+      }
       try {
         events[command].compile(
           { ...input[i].args, ...input[i].children },
@@ -102,7 +117,7 @@ const compileEntityEvents = (input = [], options = {}) => {
           // If string was equivent to position integer then replace it
           // in output otherwise
           output[oi] = intCmd;
-        } else {
+        } else if(!(typeof output[oi] === "string" && output[oi].startsWith("__REPLACE:"))) {
           let reason = "";
           if (String(output[oi]).startsWith("goto:")) {
             reason = "Did you remember to define a label in the script?";

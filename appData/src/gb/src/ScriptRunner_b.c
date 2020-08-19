@@ -53,7 +53,7 @@ void Script_End_b()
 void Script_Text_b()
 {
   script_ptr += 1 + script_cmd_args_len;
-  UIShowText((script_cmd_args[0] * 256) + script_cmd_args[1]);
+  UIShowText(script_cmd_args[0], (script_cmd_args[1] * 256) + script_cmd_args[2]);
   script_action_complete = FALSE;
 }
 
@@ -655,7 +655,7 @@ void Script_IfInput_b()
 void Script_Choice_b()
 {
   script_ptr += 1 + script_cmd_args_len;
-  UIShowChoice((script_cmd_args[0] * 256) + script_cmd_args[1], (script_cmd_args[2] * 256) + script_cmd_args[3]);
+  UIShowChoice((script_cmd_args[0] * 256) + script_cmd_args[1], script_cmd_args[2], (script_cmd_args[3] * 256) + script_cmd_args[4]);
   script_action_complete = FALSE;
 }
 
@@ -667,7 +667,7 @@ void Script_Choice_b()
 void Script_TextMenu_b()
 {
   script_ptr += 1 + script_cmd_args_len;
-  UIShowMenu((script_cmd_args[0] * 256) + script_cmd_args[1], (script_cmd_args[2] * 256) + script_cmd_args[3], script_cmd_args[4], script_cmd_args[5]);
+  UIShowMenu((script_cmd_args[0] * 256) + script_cmd_args[1], script_cmd_args[2], (script_cmd_args[3] * 256) + script_cmd_args[4], script_cmd_args[5], script_cmd_args[6]);
   script_action_complete = FALSE;
 }
 
@@ -680,19 +680,48 @@ void Script_PlayerSetSprite_b()
 {
   BANK_PTR sprite_bank_ptr;
   UWORD sprite_ptr;
-  UBYTE sprite_index, sprite_frames, sprite_len;
+  UWORD sprite_index;
+  UBYTE sprite_frames, sprite_len, load_size;
 
   // Load Player Sprite
-  sprite_index = script_cmd_args[0];
+  sprite_index = (script_cmd_args[0] * 256) + script_cmd_args[1];
   ReadBankedBankPtr(DATA_PTRS_BANK, &sprite_bank_ptr, &sprite_bank_ptrs[sprite_index]);
   sprite_ptr = ((UWORD)bank_data_ptrs[sprite_bank_ptr.bank]) + sprite_bank_ptr.offset;
   sprite_frames = ReadBankedUBYTE(sprite_bank_ptr.bank, sprite_ptr);
   sprite_len = MUL_4(sprite_frames);
-  SetBankedSpriteData(sprite_bank_ptr.bank, 0, sprite_len, sprite_ptr + 1);
+
+  if (sprite_frames > 6) {
+    load_size = 24;
+  } else {
+    load_size = sprite_len;
+  }
+
+  SetBankedSpriteData(sprite_bank_ptr.bank, 0, load_size, sprite_ptr + 1);
   actors[0].sprite = 0;
   actors[0].frame = 0;
-  actors[0].sprite_type = sprite_frames == 6 ? SPRITE_ACTOR_ANIMATED : sprite_frames == 3 ? SPRITE_ACTOR : SPRITE_STATIC;
-  actors[0].frames_len = sprite_frames == 6 ? 2 : sprite_frames == 3 ? 1 : sprite_frames;
+
+  if (sprite_frames > 6)
+  {
+    // Limit player to 6 frames to prevent overflow into scene actor vram
+    actors[0].sprite_type = SPRITE_STATIC;
+    actors[0].frames_len = 6;
+  }
+  else if (sprite_frames == 6)
+  {
+    actors[0].sprite_type = SPRITE_ACTOR_ANIMATED;
+    actors[0].frames_len = 2;
+  }
+  else if (sprite_frames == 3)
+  {
+    actors[0].sprite_type = SPRITE_ACTOR;
+    actors[0].frames_len = 1;
+  }
+  else
+  {
+    actors[0].sprite_type = SPRITE_STATIC;
+    actors[0].frames_len = sprite_frames;
+  }
+
   SceneRenderActor(0);
 
   // Keep new sprite when switching scene
@@ -798,30 +827,32 @@ void Script_SaveData_b()
   RAMPtr[0] = TRUE; // Flag to determine if data has been stored
 
   // Save current scene
-  RAMPtr[1] = scene_index;
+  RAMPtr[1] = scene_index >> 8;
+  RAMPtr[2] = scene_index & 0xFF;
 
   // Save player position
-  RAMPtr[2] = actors[0].pos.x;
-  RAMPtr[3] = actors[0].pos.y;
+  RAMPtr[3] = actors[0].pos.x;
+  RAMPtr[4] = actors[0].pos.y;
   if (actors[0].dir.x < 0)
   {
-    RAMPtr[4] = 2;
+    RAMPtr[5] = 2;
   }
   else if (actors[0].dir.x > 0)
   {
-    RAMPtr[4] = 4;
+    RAMPtr[5] = 4;
   }
   else if (actors[0].dir.y < 0)
   {
-    RAMPtr[4] = 8;
+    RAMPtr[5] = 8;
   }
   else
   {
-    RAMPtr[4] = 1;
+    RAMPtr[5] = 1;
   }
 
   // Save player sprite
-  RAMPtr[5] = map_next_sprite;
+  RAMPtr[6] = map_next_sprite >> 8;
+  RAMPtr[7] = map_next_sprite & 0xFF;
 
   // Save variable values
   RAMPtr = (UBYTE *)RAM_START_VARS_PTR;
@@ -852,7 +883,7 @@ void Script_LoadData_b()
   {
     // Set scene index
     RAMPtr++;
-    scene_next_index = *RAMPtr;
+    scene_next_index = (UWORD)((*(RAMPtr++)) * 256) + *RAMPtr;
     scene_index = scene_next_index + 1;
 
     // Position player
@@ -868,7 +899,7 @@ void Script_LoadData_b()
 
     // Load player sprite
     RAMPtr++;
-    map_next_sprite = *RAMPtr;
+    map_next_sprite = (UWORD)((*(RAMPtr++)) * 256) + *RAMPtr;
 
     // Load variable values
     RAMPtr = (UBYTE *)RAM_START_VARS_PTR;
@@ -1904,7 +1935,7 @@ void Script_RemoveTimerScript_b()
 void Script_TextWithAvatar_b()
 {
   script_ptr += 1 + script_cmd_args_len;
-  UIShowText((script_cmd_args[0] * 256) + script_cmd_args[1]);
-  UIShowAvatar(script_cmd_args[2]);
+  UIShowText(script_cmd_args[0], (script_cmd_args[1] * 256) + script_cmd_args[2]);
+  UIShowAvatar(script_cmd_args[3]);
   script_action_complete = FALSE;
 }

@@ -1,5 +1,4 @@
 import { copy } from "fs-extra";
-import uuid from "uuid/v4";
 import BankedData, {
   MIN_DATA_BANK,
   GB_MAX_BANK_SIZE,
@@ -43,7 +42,7 @@ import { assetFilename } from "../helpers/gbstudio";
 const indexById = indexBy("id");
 
 const DATA_PTRS_BANK = 5;
-const NUM_MUSIC_BANKS = 8;
+const NUM_MUSIC_BANKS = 30; // To calculate usable banks if MBC1
 
 export const EVENT_START_DATA_COMPILE = "EVENT_START_DATA_COMPILE";
 export const EVENT_DATA_COMPILE_PROGRESS = "EVENT_DATA_COMPILE_PROGRESS";
@@ -259,7 +258,7 @@ const compile = async (
         hi(scene.backgroundIndex),
         lo(scene.backgroundIndex),
         scene.sprites.length,
-        scene.sprites,
+        flatten(scene.sprites.map((spriteIndex)=> [hi(spriteIndex), lo(spriteIndex)])),
         scene.actors.length,
         compileActors(scene.actors, {
           eventPtrs: eventPtrs[sceneIndex].actors,
@@ -279,6 +278,33 @@ const compile = async (
     );
   });
 
+  // Replace ptrs in banked data
+  banked.mutate((data) => {
+    if(typeof data === "number") {
+      return data;
+    }
+    if(typeof data === "string" && data.startsWith("__REPLACE")) {
+      if(data.startsWith("__REPLACE:STRING_BANK:")) {
+        const index = parseInt(data.replace(/.*:/,''), 10);
+        return stringPtrs[index].bank;
+      }
+      if(data.startsWith("__REPLACE:STRING_HI:")) {
+        const index = parseInt(data.replace(/.*:/,''), 10);
+        return hi(stringPtrs[index].offset);
+      }
+      if(data.startsWith("__REPLACE:STRING_LO:")) {
+        const index = parseInt(data.replace(/.*:/,''), 10);
+        return lo(stringPtrs[index].offset);
+      }      
+    }
+    const value = parseInt(data, 10);
+    if(!isNaN(value)) {
+      return value;
+    }
+    warnings(`Non numeric data found while processing banked data "${data}".`);
+    return data;
+  })
+  
   let startSceneIndex = precompiled.sceneData.findIndex(
     m => m.id === projectData.settings.startSceneId
   );
@@ -314,7 +340,6 @@ const compile = async (
     background_bank_ptrs: fixEmptyDataPtrs(backgroundPtrs),
     sprite_bank_ptrs: fixEmptyDataPtrs(spritePtrs),
     scene_bank_ptrs: fixEmptyDataPtrs(scenePtrs),
-    string_bank_ptrs: fixEmptyDataPtrs(stringPtrs),
     avatar_bank_ptrs: fixEmptyDataPtrs(avatarPtrs)
   };
 
@@ -382,7 +407,7 @@ const compile = async (
       })
       .join(`\n`)}\n` +
     `extern const unsigned char (*bank_data_ptrs[])[];\n` +
-    `extern const unsigned char * music_tracks[];\n` +
+    `extern const unsigned int music_tracks[];\n` +
     `extern const unsigned char music_banks[];\n` +
     `extern unsigned char script_variables[${precompiled.variables.length +
       1}];\n${music
@@ -405,13 +430,9 @@ const compile = async (
           .join(",")}\n};\n`;
       })
       .join(`\n`)}\n` +
-    `const unsigned char * music_tracks[] = {\n${music
-      .map(track => `${track.dataName}_Data`)
-      .join(", ") || "0"}, 0` +
+    `const unsigned int music_tracks[] = {\n` +
     `\n};\n\n` +
-    `const unsigned char music_banks[] = {\n${music
-      .map(track => track.bank)
-      .join(", ") || "0"}, 0` +
+    `const unsigned char music_banks[] = {\n` +
     `\n};\n\n` +
     `unsigned char script_variables[${precompiled.variables.length +
       1}] = { 0 };\n`;
@@ -423,9 +444,13 @@ const compile = async (
     output[`bank_${bank}.c`] = bankDataBank;
   });
 
+  const maxDataBank = banked.getMaxWriteBank();
+
   return {
     files: output,
-    music
+    music,
+    maxDataBank,
+    musicBanks
   };
 };
 
@@ -528,6 +553,11 @@ const precompile = async (
 
 export const precompileVariables = scenes => {
   const variables = [];
+  
+  for (let i=0; i<100; i++) {
+    variables.push(String(i));
+  }
+
   walkScenesEvents(scenes, cmd => {
     if (eventHasArg(cmd, "variable")) {
       const variable = cmd.args.variable || "0";
@@ -791,7 +821,7 @@ export const precompileMusic = (scenes, music) => {
     .map((track, index) => {
       return {
         ...track,
-        dataName: `music_${uuid().replace(/-.*/, "")}${index}`
+        dataName: (`music_track_`+ (index + 101) + '_')
       };
     });
   return { usedMusic };
